@@ -8,8 +8,10 @@ import (
 )
 
 type UdpServer struct {
-	svr *net.UDPConn
-	wg  sync.WaitGroup
+	svr     *net.UDPConn
+	wg      sync.WaitGroup
+	addr2id map[net.UDPAddr]uint32
+	id2addr map[uint32]net.UDPAddr
 }
 
 func NewServer(addr string, eh func(error), dh func(uint32)) *UdpServer {
@@ -43,4 +45,20 @@ func (p *UdpServer) Read() []*message.Message {
 
 func (p *UdpServer) Write(connId uint32, msgType int, msg []byte) bool {
 	return true
+}
+
+func (p *UdpServer) recv() {
+	for {
+		data := make([]byte, 512)
+		sz, addr, err := p.svr.ReadFrom(data)
+		if err != nil {
+			fmt.Println("udp[", p.svr.LocalAddr(), "] read error:", err)
+			return
+		}
+
+	}
+}
+
+func (p *UdpServer) send() {
+
 }
