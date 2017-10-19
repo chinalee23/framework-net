@@ -86,7 +86,7 @@ func (p *stUdp) unpack(data []byte) {
 	msg := &message.Message{
 		ConnId:  p.id,
 		MsgType: msgType,
-		Data:    data[2:],
+		Data:    data,
 	}
 	p.chmsg <- msg
 }

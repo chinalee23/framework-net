@@ -12,10 +12,11 @@ type TcpServer struct {
 	svr    *net.TCPListener
 	conns  map[uint32]*stTcp
 	nextId uint32
-	chmsg  chan *message.Message
 	wg     sync.WaitGroup
 	eh     func(error)
 	dh     func(uint32)
+
+	Chmsg chan *message.Message
 }
 
 func NewServer(addr string, eh func(error), dh func(uint32)) *TcpServer {
@@ -33,9 +34,9 @@ func NewServer(addr string, eh func(error), dh func(uint32)) *TcpServer {
 		svr:    svr,
 		conns:  make(map[uint32]*stTcp),
 		nextId: 0,
-		chmsg:  make(chan *message.Message),
 		eh:     eh,
 		dh:     dh,
+		Chmsg:  make(chan *message.Message, 1024),
 	}
 }
 
@@ -67,7 +68,7 @@ func (p *TcpServer) Read() []*message.Message {
 	msgs := make([]*message.Message, 0)
 	for {
 		select {
-		case msg := <-p.chmsg:
+		case msg := <-p.Chmsg:
 			msgs = append(msgs, msg)
 			break
 		default:
@@ -87,7 +88,7 @@ func (p *TcpServer) Write(connId uint32, msgType int, msg []byte) bool {
 
 func (p *TcpServer) accept(conn *net.TCPConn) {
 	atomic.AddUint32(&p.nextId, 1)
-	tcp := newTcp(p.nextId, conn, p.chmsg, p.dh)
+	tcp := newTcp(p.nextId, conn, p.Chmsg, p.dh)
 	p.conns[p.nextId] = tcp
 	tcp.start()
 }
