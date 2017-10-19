@@ -17,4 +17,9 @@ namespace Net {
             len = 0;
         }
     }
+
+    class Message {
+        public int msgType;
+        public byte[] msg;
+    }
 }

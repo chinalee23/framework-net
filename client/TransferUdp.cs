@@ -49,6 +49,23 @@ namespace Net {
             }
         }
 
+        byte[] pack(int msgType, byte[] msg) {
+            byte[] btType = BitConverter.GetBytes(IPAddress.HostToNetworkOrder((short)msgType));
+            byte[] btData = new byte[msg.Length + 2];
+            Array.Copy(btType, 0, btData, 0, 2);
+            Array.Copy(msg, 0, btData, 2, msg.Length);
+            return btData;
+        }
+
+        Message unpack(byte[] btData) {
+            short msgType = IPAddress.NetworkToHostOrder(BitConverter.ToInt16(btData, 0));
+            Message msg = new Message();
+            msg.msgType = msgType;
+            msg.msg = new byte[btData.Length - 2];
+            Array.Copy(btData, 2, msg.msg, 0, btData.Length - 2);
+            return msg;
+        }
+
         public void Connect(IPEndPoint remote) {
             try {
                 rep = remote;
@@ -63,7 +80,8 @@ namespace Net {
             }
         }
 
-        public void Send(byte[] data) {
+        public void Send(int msgType, byte[] msg) {
+            byte[] data = pack(msgType, msg);
             U.Send(data, data.Length);
         }
 
@@ -76,8 +94,13 @@ namespace Net {
             }
         }
 
-        public byte[] Recv() {
-            return U.Recv();
+        public Message Recv() {
+            byte[] btData = U.Recv();
+            if (btData == null) {
+                return null;
+            } else {
+                return unpack(btData);
+            }
         }
     }
 }

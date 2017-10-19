@@ -7,13 +7,13 @@ using System.Collections.Generic;
 namespace Net {
     class TransferTcp : Transfer {
         public TransferTcp() {
-            msgQueue = new List<byte[]>();
+            msgQueue = new List<Message>();
         }
         
-        List<byte[]> msgQueue;
+        List<Message> msgQueue;
 
-        byte[] pack(byte[] data) {
-            int len = data.Length;
+        byte[] pack(int msgType, byte[] msg) {
+            int len = msg.Length;
 
             byte[] btLen;
             if (len > 127) {
@@ -24,11 +24,15 @@ namespace Net {
                 btLen = new byte[1];
                 btLen[0] = (byte)len;
             }
-            byte[] btMsg = new byte[btLen.Length + len];
-            Array.Copy(btLen, 0, btMsg, 0, btLen.Length);
-            Array.Copy(data, 0, btMsg, btLen.Length, len);
+            byte[] btData = new byte[btLen.Length + len + 2];
+            Array.Copy(btLen, 0, btData, 0, btLen.Length);
 
-            return btMsg;
+            byte[] btType = BitConverter.GetBytes(IPAddress.HostToNetworkOrder((short)msgType));
+            Array.Copy(btType, 0, btData, btLen.Length, 2);
+
+            Array.Copy(msg, 0, btData, btLen.Length + 2, len);
+
+            return btData;
         }
 
         bool unpack(ref int offset) {
@@ -47,11 +51,16 @@ namespace Net {
             if ((dataBuffer.len - offset - szLen) < sz) {
                 return false;
             }
-            byte[] bt = new byte[sz];
-            Array.Copy(dataBuffer.bt, offset + szLen, bt, 0, sz);
-            msgQueue.Add(bt);
+            short msgType = IPAddress.NetworkToHostOrder(BitConverter.ToInt16(dataBuffer.bt, offset + szLen));
 
-            offset += sz + szLen;
+            Message msg = new Message();
+            msg.msgType = msgType;
+            msg.msg = new byte[sz];
+            Array.Copy(dataBuffer.bt, offset + szLen + 2, msg.msg, 0, sz);
+
+            msgQueue.Add(msg);
+
+            offset += sz + szLen + 2;
             return true;
         }
 
@@ -92,10 +101,10 @@ namespace Net {
             }
         }
 
-        public void Send(byte[] data) {
-            byte[] msg = pack(data);
+        public void Send(int msgType, byte[] msg) {
+            byte[] data = pack(msgType, msg);
             try {
-                socket.Send(msg, msg.Length, SocketFlags.None);
+                socket.Send(data, data.Length, SocketFlags.None);
             } catch (Exception e) {
 
             }
@@ -109,11 +118,11 @@ namespace Net {
             }
         }
 
-        public byte[] Recv() {
+        public Message Recv() {
             if (msgQueue.Count > 0) {
-                byte[] data = msgQueue[0];
+                Message msg = msgQueue[0];
                 msgQueue.RemoveAt(0);
-                return data;
+                return msg;
             } else {
                 return null;
             }
