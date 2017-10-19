@@ -95,7 +95,7 @@ namespace Net {
             }
         }
 
-        public void Connect(IPEndPoint remote, Action cb) {
+        public override void Connect(IPEndPoint remote, Action cb) {
             Connected = false;
             cbConnect = cb;
             try {
@@ -107,7 +107,7 @@ namespace Net {
             }
         }
 
-        public void Send(int msgType, byte[] msg) {
+        public override void Send(int msgType, byte[] msg) {
             byte[] data = pack(msgType, msg);
             try {
                 socket.Send(data, data.Length, SocketFlags.None);
@@ -116,7 +116,7 @@ namespace Net {
             }
         }
 
-        public void Update() {
+        public override void Update() {
             lock (dataBuffer) {
                 int offset = 0;
                 while (unpack(ref offset)) { }
@@ -125,7 +125,7 @@ namespace Net {
             }
         }
 
-        public Message Recv() {
+        public override Message Recv() {
             if (msgQueue.Count > 0) {
                 Message msg = msgQueue[0];
                 msgQueue.RemoveAt(0);

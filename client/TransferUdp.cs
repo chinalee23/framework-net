@@ -66,7 +66,7 @@ namespace Net {
             return msg;
         }
 
-        public void Connect(IPEndPoint remote, Action cb) {
+        public override void Connect(IPEndPoint remote, Action cb) {
             try {
                 rep = remote;
                 socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
@@ -82,21 +82,22 @@ namespace Net {
             }
         }
 
-        public void Send(int msgType, byte[] msg) {
+        public override void Send(int msgType, byte[] msg) {
             byte[] data = pack(msgType, msg);
             U.Send(data, data.Length);
         }
 
-        public void Update() {
+        public override void Update() {
             lock (dataBuffer) {
                 List<Rudp.PackageBuffer> pkgs = U.Update(dataBuffer.bt, dataBuffer.len);
                 for (int i = 0; i < pkgs.Count; ++i) {
                     send(pkgs[i].buffer, pkgs[i].len);
                 }
+                dataBuffer.len = 0;
             }
         }
 
-        public Message Recv() {
+        public override Message Recv() {
             byte[] btData = U.Recv();
             if (btData == null) {
                 return null;

@@ -64,12 +64,16 @@ namespace Net {
             }
             if (socket != null) {
                 socket.Close();
-                socket.Dispose();
             }
             socketBuffer.len = 0;
             dataBuffer.len = 0;
 
             Connected = false;
         }
+
+        public virtual void Connect(IPEndPoint remote, Action cb) { }
+        public virtual void Send(int msgType, byte[] msg) { }
+        public virtual void Update() { }
+        public virtual Message Recv() { return null; }
     }
 }
