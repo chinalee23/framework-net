@@ -66,7 +66,7 @@ namespace Net {
             return msg;
         }
 
-        public void Connect(IPEndPoint remote) {
+        public void Connect(IPEndPoint remote, Action cb) {
             try {
                 rep = remote;
                 socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
@@ -75,7 +75,9 @@ namespace Net {
                 threadRead.Start();
 
                 Connected = true;
+                cb();
             } catch (Exception e) {
+                cb();
                 error(e);
             }
         }

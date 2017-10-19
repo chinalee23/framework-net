@@ -11,6 +11,7 @@ namespace Net {
         }
         
         List<Message> msgQueue;
+        Action cbConnect;
 
         byte[] pack(int msgType, byte[] msg) {
             int len = msg.Length;
@@ -36,19 +37,20 @@ namespace Net {
         }
 
         bool unpack(ref int offset) {
+            if ((offset + 3) > dataBuffer.len) {
+                return false;
+            }
+
             int sz;
             int szLen;
             if (dataBuffer.bt[offset] > 127) {
-                if (offset == dataBuffer.len) {
-                    return false;
-                }
                 sz = (dataBuffer.bt[offset] & 0x7f) * 256 + dataBuffer.bt[offset + 1];
                 szLen = 2;
             } else {
                 sz = dataBuffer.bt[offset];
                 szLen = 1;
             }
-            if ((dataBuffer.len - offset - szLen) < sz) {
+            if ((offset + szLen + 2 + sz) > dataBuffer.len) {
                 return false;
             }
             short msgType = IPAddress.NetworkToHostOrder(BitConverter.ToInt16(dataBuffer.bt, offset + szLen));
@@ -84,19 +86,23 @@ namespace Net {
                 threadRead.Start();
 
                 Connected = true;
+                cbConnect();
             }
             catch (Exception e) {
                 error(e);
+                cbConnect();
                 return;
             }
         }
 
-        public void Connect(IPEndPoint remote) {
+        public void Connect(IPEndPoint remote, Action cb) {
             Connected = false;
+            cbConnect = cb;
             try {
                 socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
                 socket.BeginConnect(remote, onConnect, null);
             } catch (Exception e) {
+                cb();
                 error(e);
             }
         }
@@ -115,6 +121,7 @@ namespace Net {
                 int offset = 0;
                 while (unpack(ref offset)) { }
                 Array.Copy(dataBuffer.bt, offset, dataBuffer.bt, 0, dataBuffer.len - offset);
+                dataBuffer.len -= offset;
             }
         }
 
