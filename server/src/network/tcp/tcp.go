@@ -140,6 +140,7 @@ func (p *stTcp) unpack() {
 			MsgType: msgType,
 			Data:    p.buff[:sz],
 		}
+		p.buff = p.buff[sz:]
 		p.chmsg <- msg
 	}
 }
