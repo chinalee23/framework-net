@@ -91,7 +91,7 @@ func (p *stUdp) unpack(data []byte) {
 	msgType := message.ToInt(data[:2])
 	msg := &message.Message{
 		MsgType: msgType,
-		Data:    data,
+		Data:    data[2:],
 	}
 	p.chmsg <- msg
 }
