@@ -14,7 +14,12 @@ namespace Net {
         Action cbConnect;
 
         byte[] pack(int msgType, byte[] msg) {
-            int len = msg.Length;
+            int len;
+            if (msg == null) {
+                len = 0;
+            } else {
+                len = msg.Length;
+            }
 
             byte[] btLen;
             if (len > 127) {
@@ -31,7 +36,9 @@ namespace Net {
             byte[] btType = BitConverter.GetBytes(IPAddress.HostToNetworkOrder((short)msgType));
             Array.Copy(btType, 0, btData, btLen.Length, 2);
 
-            Array.Copy(msg, 0, btData, btLen.Length + 2, len);
+            if (msg != null) {
+                Array.Copy(msg, 0, btData, btLen.Length + 2, len);
+            }
 
             return btData;
         }
@@ -63,6 +70,8 @@ namespace Net {
             msgQueue.Add(msg);
 
             offset += sz + szLen + 2;
+
+            //UnityEngine.Debug.Log("unpack sz: " + offset);
             return true;
         }
 
@@ -70,6 +79,7 @@ namespace Net {
             while (true) {
                 try {
                     int sz = socket.Receive(socketBuffer.bt, socketBuffer.len, Definition.BUFFER_SIZE - socketBuffer.len, SocketFlags.None);
+                    //UnityEngine.Debug.Log("socket receive len: " + sz);
                     socketBuffer.len += sz;
                     copyToDataBuffer();
                 } catch (Exception e) {

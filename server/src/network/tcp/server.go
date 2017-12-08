@@ -3,43 +3,39 @@ package tcp
 import (
 	"fmt"
 	"net"
-	"network/message"
+	"network/netdef"
 	"sync"
-	"sync/atomic"
 )
 
-type TcpServer struct {
-	svr    *net.TCPListener
-	conns  map[uint32]*stTcp
-	nextId uint32
-	chmsg  chan *message.Message
-	wg     sync.WaitGroup
-	eh     func(error)
-	dh     func(uint32)
+type stTcpServer struct {
+	svr   *net.TCPListener
+	conns []*stTcp
+	wg    sync.WaitGroup
+	eh    func(error)
 }
 
-func NewServer(addr string, eh func(error), dh func(uint32)) *TcpServer {
+func NewServer(addr string, eh func(error)) (stTcpServer, error) {
+	var tcpServer stTcpServer
+
 	laddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
 		fmt.Println("tcp addr[", addr, "] error:", err)
-		return nil
+		return tcpServer, err
 	}
 	svr, err := net.ListenTCP("tcp", laddr)
 	if err != nil {
 		fmt.Println("tcp listen[", addr, "] error:", err)
-		return nil
+		return tcpServer, err
 	}
-	return &TcpServer{
-		svr:    svr,
-		conns:  make(map[uint32]*stTcp),
-		nextId: 0,
-		chmsg:  make(chan *message.Message),
-		eh:     eh,
-		dh:     dh,
-	}
+	fmt.Println("tcp listen[", addr, "] success")
+	return stTcpServer{
+		svr:   svr,
+		conns: make([]*stTcp, 0),
+		eh:    eh,
+	}, nil
 }
 
-func (p *TcpServer) Start() {
+func (p stTcpServer) Start(chClient chan netdef.Connection) {
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
@@ -48,46 +44,23 @@ func (p *TcpServer) Start() {
 			if err != nil {
 				fmt.Println("tcp[", p.svr.Addr(), "] accept error:", err)
 				p.eh(err)
-				return
+			} else {
+				p.accept(conn, chClient)
 			}
-			p.accept(conn)
 		}
 	}()
 }
 
-func (p *TcpServer) Close() {
+func (p stTcpServer) Close() {
 	p.svr.Close()
 	p.wg.Wait()
 	for _, conn := range p.conns {
-		conn.close()
+		conn.Close()
 	}
 }
 
-func (p *TcpServer) Read() []*message.Message {
-	msgs := make([]*message.Message, 0)
-	for {
-		select {
-		case msg := <-p.chmsg:
-			msgs = append(msgs, msg)
-			break
-		default:
-			return msgs
-		}
-	}
-}
-
-func (p *TcpServer) Write(connId uint32, msgType int, msg []byte) bool {
-	conn, ok := p.conns[connId]
-	if !ok {
-		return false
-	}
-	conn.write(msgType, msg)
-	return true
-}
-
-func (p *TcpServer) accept(conn *net.TCPConn) {
-	atomic.AddUint32(&p.nextId, 1)
-	tcp := newTcp(p.nextId, conn, p.chmsg, p.dh)
-	p.conns[p.nextId] = tcp
-	tcp.start()
+func (p stTcpServer) accept(conn *net.TCPConn, chClient chan netdef.Connection) {
+	tcp := newTcp(conn)
+	p.conns = append(p.conns, tcp)
+	chClient <- tcp
 }

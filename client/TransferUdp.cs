@@ -39,7 +39,7 @@ namespace Net {
 
         void send(byte[] data, int len) {
             try {
-                socket.SendTo(data, data.Length, SocketFlags.None, rep);
+                socket.SendTo(data, len, SocketFlags.None, rep);
                 if (!binded) {
                     binded = true;
                 }
@@ -51,9 +51,17 @@ namespace Net {
 
         byte[] pack(int msgType, byte[] msg) {
             byte[] btType = BitConverter.GetBytes(IPAddress.HostToNetworkOrder((short)msgType));
-            byte[] btData = new byte[msg.Length + 2];
+            int len;
+            if (msg == null) {
+                len = 2;
+            } else {
+                len = msg.Length + 2;
+            }
+            byte[] btData = new byte[len];
             Array.Copy(btType, 0, btData, 0, 2);
-            Array.Copy(msg, 0, btData, 2, msg.Length);
+            if (msg != null) {
+                Array.Copy(msg, 0, btData, 2, msg.Length);
+            }
             return btData;
         }
 
@@ -75,6 +83,10 @@ namespace Net {
                 threadRead.Start();
 
                 Connected = true;
+
+                // 起到类似于accept的作用
+                send(new byte[] { 0 }, 1);
+
                 cb();
             } catch (Exception e) {
                 cb();
@@ -88,10 +100,16 @@ namespace Net {
         }
 
         public override void Update() {
+            if (U.Crashed) {
+                error(new Exception("udp disconnect"));
+                return;
+            }
             lock (dataBuffer) {
                 List<Rudp.PackageBuffer> pkgs = U.Update(dataBuffer.bt, dataBuffer.len);
-                for (int i = 0; i < pkgs.Count; ++i) {
-                    send(pkgs[i].buffer, pkgs[i].len);
+                if (pkgs != null) {
+                    for (int i = 0; i < pkgs.Count; ++i) {
+                        send(pkgs[i].buffer, pkgs[i].len);
+                    }
                 }
                 dataBuffer.len = 0;
             }

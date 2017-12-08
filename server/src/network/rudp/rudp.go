@@ -2,6 +2,7 @@ package rudp
 
 import (
 	"container/list"
+	"fmt"
 )
 
 const (
@@ -12,6 +13,9 @@ const (
 	_TYPE_HEARTBEAT = 0
 	_TYPE_REQUEST   = 1
 	_TYPE_DATA      = 2
+
+	_HEARTBEAT_INTERVAL = 500
+	_TIMEOUT_INTERVAL   = 3000
 )
 
 type stMessage struct {
@@ -26,11 +30,14 @@ type stPackageBuffer struct {
 }
 
 type Rudp struct {
+	crashed          bool
 	curr_tick        int
 	expired_interval int
 	send_id          int
 	recv_id_min      int
 	recv_id_max      int
+	heartbeat_tick   int
+	timeout_tick     int
 
 	send_queue    *list.List
 	recv_queue    *list.List
@@ -41,11 +48,14 @@ type Rudp struct {
 
 func New() *Rudp {
 	return &Rudp{
+		crashed:          false,
 		curr_tick:        0,
 		expired_interval: 10,
 		send_id:          0,
 		recv_id_min:      0,
 		recv_id_max:      0,
+		heartbeat_tick:   _HEARTBEAT_INTERVAL,
+		timeout_tick:     _TIMEOUT_INTERVAL,
 
 		send_queue:    list.New(),
 		recv_queue:    list.New(),
@@ -196,7 +206,7 @@ func (p *Rudp) reply_request(pkgBuffer *stPackageBuffer) {
 		for ee := p.history_queue.Front(); ee != nil; ee = ee.Next() {
 			tmp := ee.Value.(*stMessage)
 			if id < tmp.id { // already expired
-
+				p.crashed = true
 			} else if id == tmp.id {
 				p.pack_message(tmp, pkgBuffer)
 			}
@@ -222,9 +232,18 @@ func (p *Rudp) gen_package() {
 	p.send_message(pkgBuffer)
 
 	if pkgBuffer.sz == 0 {
-		p.pack_heartbeat(pkgBuffer)
+		if p.heartbeat_tick == 0 {
+			p.pack_heartbeat(pkgBuffer)
+			p.heartbeat_tick = _HEARTBEAT_INTERVAL
+			fmt.Println("send heart beat")
+		} else {
+			p.heartbeat_tick--
+		}
 	}
-	p.pkg_queue.PushBack(pkgBuffer)
+
+	if pkgBuffer.sz > 0 {
+		p.pkg_queue.PushBack(pkgBuffer)
+	}
 }
 
 func (p *Rudp) Send(data []byte, sz int) {
@@ -274,7 +293,7 @@ func (p *Rudp) Unpack(data []byte, sz int) {
 		default:
 			length -= _TYPE_DATA
 			if sz < length+2 {
-				// error
+				p.crashed = true
 				return
 			} else {
 				id := get_id(data)
@@ -284,9 +303,24 @@ func (p *Rudp) Unpack(data []byte, sz int) {
 			}
 		}
 	}
+
+	if !p.crashed {
+		p.timeout_tick = _TIMEOUT_INTERVAL
+	}
 }
 
 func (p *Rudp) Update() *list.List {
+	if p.crashed {
+		return nil
+	}
+
+	p.timeout_tick--
+	if p.timeout_tick == 0 {
+		fmt.Println("................ time out")
+		p.crashed = true
+		return nil
+	}
+
 	p.curr_tick++
 	p.pkg_queue.Init()
 	p.gen_package()

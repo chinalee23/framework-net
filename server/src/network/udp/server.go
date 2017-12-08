@@ -3,7 +3,7 @@ package udp
 import (
 	"fmt"
 	"net"
-	"network/message"
+	"network/netdef"
 	"sync"
 	"sync/atomic"
 )
@@ -13,44 +13,46 @@ type stSendPackage struct {
 	data []byte
 }
 
-type UdpServer struct {
-	svr     *net.UDPConn
-	conns   map[net.Addr]*stUdp
-	id2conn map[uint32]*stUdp
-	nextId  uint32
-	wg      sync.WaitGroup
-	chsend  chan *stSendPackage
-	chmsg   chan *message.Message
-	chexit  chan bool
-	eh      func(error)
+type stUdpServer struct {
+	svr      *net.UDPConn
+	conns    map[string]*stUdp
+	id2conn  map[uint32]*stUdp
+	nextId   uint32
+	wg       sync.WaitGroup
+	chsend   chan *stSendPackage
+	chexit   chan bool
+	eh       func(error)
+	chClient chan netdef.Connection
 }
 
-func NewServer(addr string, eh func(error)) *UdpServer {
+func NewServer(addr string, eh func(error)) (stUdpServer, error) {
+	var udpSvr stUdpServer
+
 	laddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		fmt.Println("udp addr[", addr, "] error:", err)
-		return nil
+		return udpSvr, err
 	}
 	svr, err := net.ListenUDP("udp", laddr)
 	if err != nil {
 		fmt.Println("udp listen[", addr, "] error:", err)
-		return nil
+		return udpSvr, err
 	}
-	return &UdpServer{
+	return stUdpServer{
 		svr:     svr,
-		conns:   make(map[net.Addr]*stUdp),
+		conns:   make(map[string]*stUdp),
 		id2conn: make(map[uint32]*stUdp),
 		nextId:  0,
 		chsend:  make(chan *stSendPackage, 1024),
-		chmsg:   make(chan *message.Message, 1024),
 		chexit:  make(chan bool),
 		eh:      eh,
-	}
+	}, nil
 }
 
-func (p *UdpServer) Start() {
-	p.wg.Add(2)
+func (p stUdpServer) Start(chClient chan netdef.Connection) {
+	p.chClient = chClient
 
+	p.wg.Add(2)
 	go func() {
 		defer p.wg.Done()
 		p.recv()
@@ -62,37 +64,16 @@ func (p *UdpServer) Start() {
 	}()
 }
 
-func (p *UdpServer) Close() {
+func (p stUdpServer) Close() {
 	p.svr.Close()
+	close(p.chexit)
 	p.wg.Wait()
 	for _, conn := range p.conns {
-		conn.close()
+		conn.Close()
 	}
 }
 
-func (p *UdpServer) Read() []*message.Message {
-	msgs := make([]*message.Message, 0)
-	for {
-		select {
-		case msg := <-p.chmsg:
-			msgs = append(msgs, msg)
-			break
-		default:
-			return msgs
-		}
-	}
-}
-
-func (p *UdpServer) Write(connId uint32, msgType int, msg []byte) bool {
-	conn, ok := p.id2conn[connId]
-	if !ok {
-		return false
-	}
-	conn.write(msgType, msg)
-	return true
-}
-
-func (p *UdpServer) recv() (err error) {
+func (p stUdpServer) recv() (err error) {
 	defer func() {
 		if err != nil {
 			select {
@@ -114,7 +95,8 @@ func (p *UdpServer) recv() (err error) {
 				fmt.Println("udp[", p.svr.LocalAddr(), "] read error:", err)
 				return err
 			}
-			conn, ok := p.conns[addr]
+			fmt.Println("receive data from", addr, "data:", data[:sz])
+			conn, ok := p.conns[addr.String()]
 			if ok {
 				conn.recv(data[:sz])
 			} else {
@@ -124,22 +106,24 @@ func (p *UdpServer) recv() (err error) {
 	}
 }
 
-func (p *UdpServer) send() {
+func (p stUdpServer) send() {
 	for {
 		select {
 		case <-p.chexit:
 			break
 		case pkg := <-p.chsend:
+			fmt.Println("send data:", pkg.data)
 			p.svr.WriteTo(pkg.data, pkg.addr)
 			break
 		}
 	}
 }
 
-func (p *UdpServer) accept(addr net.Addr) {
+func (p stUdpServer) accept(addr net.Addr) {
 	atomic.AddUint32(&p.nextId, 1)
-	udp := newUdp(p.nextId, addr, p.chsend, p.chmsg)
-	p.conns[addr] = udp
+	udp := newUdp(p.nextId, addr, p.chsend)
+	p.conns[addr.String()] = udp
 	p.id2conn[p.nextId] = udp
-	udp.start()
+
+	p.chClient <- udp
 }

@@ -8,29 +8,28 @@ import (
 )
 
 type stTcp struct {
-	id     uint32
-	conn   *net.TCPConn
-	buff   []byte
-	chsend chan []byte
-	chexit chan bool
-	wg     sync.WaitGroup
-	chmsg  chan *message.Message
-	dh     func(uint32)
+	conn         *net.TCPConn
+	disconnected bool
+	buff         []byte
+	chsend       chan []byte
+	chexit       chan bool
+	wg           sync.WaitGroup
+	chmsg        chan *message.Message
 }
 
-func newTcp(id uint32, conn *net.TCPConn, chmsg chan *message.Message, dh func(uint32)) *stTcp {
+func newTcp(conn *net.TCPConn) *stTcp {
 	return &stTcp{
-		id:     id,
-		conn:   conn,
-		buff:   make([]byte, 0),
-		chsend: make(chan []byte),
-		chexit: make(chan bool),
-		chmsg:  chmsg,
-		dh:     dh,
+		conn:         conn,
+		disconnected: false,
+		buff:         make([]byte, 0),
+		chsend:       make(chan []byte),
+		chexit:       make(chan bool),
 	}
 }
 
-func (p *stTcp) start() {
+func (p *stTcp) Start(chmsg chan *message.Message) {
+	p.chmsg = chmsg
+
 	p.wg.Add(2)
 	go func() {
 		defer p.wg.Done()
@@ -43,15 +42,19 @@ func (p *stTcp) start() {
 	}()
 }
 
-func (p *stTcp) close() {
+func (p *stTcp) Close() {
 	close(p.chexit)
 	p.conn.Close()
 	p.wg.Wait()
 }
 
-func (p *stTcp) write(msgType int, msg []byte) {
+func (p *stTcp) Write(msgType int, msg []byte) {
 	data := p.pack(msgType, msg)
 	p.chsend <- data
+}
+
+func (p *stTcp) Disconnected() bool {
+	return p.disconnected
 }
 
 func (p *stTcp) recv() (err error) {
@@ -61,7 +64,7 @@ func (p *stTcp) recv() (err error) {
 			case <-p.chexit:
 				err = nil
 			default:
-				p.dh(p.id)
+				p.disconnected = true
 			}
 		}
 	}()
@@ -95,7 +98,12 @@ func (p *stTcp) send() {
 }
 
 func (p *stTcp) pack(msgType int, msg []byte) []byte {
-	sz := len(msg)
+	var sz int
+	if msg != nil {
+		sz = len(msg)
+	} else {
+		sz = 0
+	}
 	data := make([]byte, 0)
 	if sz > 127 {
 		data = append(data, byte(((sz>>8)&0x7f)|0x80))
@@ -104,7 +112,9 @@ func (p *stTcp) pack(msgType int, msg []byte) []byte {
 		data = append(data, byte(sz))
 	}
 	data = append(data, message.ToBytes(msgType)...)
-	data = append(data, msg...)
+	if msg != nil {
+		data = append(data, msg...)
+	}
 
 	return data
 }
@@ -136,7 +146,6 @@ func (p *stTcp) unpack() {
 		msgType := message.ToInt(p.buff[:2])
 		p.buff = p.buff[2:]
 		msg := &message.Message{
-			ConnId:  p.id,
 			MsgType: msgType,
 			Data:    p.buff[:sz],
 		}

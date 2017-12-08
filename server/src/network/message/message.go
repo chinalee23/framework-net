@@ -6,7 +6,6 @@ import (
 )
 
 type Message struct {
-	ConnId  uint32
 	MsgType int
 	Data    []byte
 }

@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 
 namespace Net {
     class Rudp {
@@ -20,6 +18,9 @@ namespace Net {
         const int TYPE_REQUEST = 1;
         const int TYPE_DATA = 2;
 
+        const int HEARTBEAT_INTERVAL = 150;
+        const int TIMEOUT_INTERVAL = 900;
+
         class Message {
             public byte[] data;
             public int id;
@@ -33,12 +34,20 @@ namespace Net {
         private int send_id;
         private int recv_id_min;
         private int recv_id_max;
+        private int timeout_tick;
+        private int heartbeat_tick;
 
         private List<Message> send_queue;
         private List<Message> recv_queue;
         private List<Message> history_queue;
         private List<int> request_queue;
         private List<PackageBuffer> pkg_queue;
+
+        public bool Crashed {
+            get {
+                return crashed;
+            }
+        }
 
 
         public Rudp() {
@@ -48,6 +57,8 @@ namespace Net {
             expired_interval = 10;
             send_id = 0;
             recv_id_min = recv_id_max = 0;
+            timeout_tick = TIMEOUT_INTERVAL;
+            heartbeat_tick = HEARTBEAT_INTERVAL;
 
             send_queue = new List<Message>();
             recv_queue = new List<Message>();
@@ -185,6 +196,10 @@ namespace Net {
                         break;
                 }
             }
+
+            if (!crashed) {
+                timeout_tick = TIMEOUT_INTERVAL;
+            }
         }
 
         private void clearExpired() {
@@ -254,10 +269,17 @@ namespace Net {
             sendMessages(pkgBuffer);
 
             if (pkgBuffer.len == 0) {
-                packHeartbeat(pkgBuffer);
+                if (heartbeat_tick == 0) {
+                    packHeartbeat(pkgBuffer);
+                    heartbeat_tick = HEARTBEAT_INTERVAL;
+                } else {
+                    heartbeat_tick--;
+                }
             }
 
-            pkg_queue.Add(pkgBuffer);
+            if (pkgBuffer.len > 0) {
+                pkg_queue.Add(pkgBuffer);
+            }
         }
 
         public void Send(byte[] data, int len) {
@@ -283,6 +305,16 @@ namespace Net {
         }
 
         public List<PackageBuffer> Update(byte[] data = null, int len = 0) {
+            if (crashed) {
+                return null;
+            }
+
+            timeout_tick--;
+            if (timeout_tick == 0) {
+                crashed = true;
+                return null;
+            }
+
             curr_tick++;
             pkg_queue.Clear();
             if (data != null && len > 0) {

@@ -9,27 +9,28 @@ import (
 )
 
 type stUdp struct {
-	id     uint32
-	addr   net.Addr
-	u      *rudp.Rudp
-	chsend chan *stSendPackage
-	chmsg  chan *message.Message
-	chexit chan bool
-	wg     sync.WaitGroup
+	id           uint32
+	addr         net.Addr
+	disconnected bool
+	u            *rudp.Rudp
+	chsend       chan *stSendPackage
+	chmsg        chan *message.Message
+	chexit       chan bool
+	wg           sync.WaitGroup
 }
 
-func newUdp(id uint32, addr net.Addr, chsend chan *stSendPackage, chmsg chan *message.Message) *stUdp {
+func newUdp(id uint32, addr net.Addr, chsend chan *stSendPackage) *stUdp {
 	return &stUdp{
 		id:     id,
 		addr:   addr,
 		u:      rudp.New(),
 		chsend: chsend,
-		chmsg:  chmsg,
 		chexit: make(chan bool),
 	}
 }
 
-func (p *stUdp) start() {
+func (p *stUdp) Start(chmsg chan *message.Message) {
+	p.chmsg = chmsg
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
@@ -39,11 +40,13 @@ func (p *stUdp) start() {
 				return
 			default:
 				pkgs := p.u.Update()
-				for e := pkgs.Front(); e != nil; e = e.Next() {
-					data := e.Value.([]byte)
-					p.chsend <- &stSendPackage{
-						addr: p.addr,
-						data: data,
+				if pkgs != nil {
+					for e := pkgs.Front(); e != nil; e = e.Next() {
+						data := e.Value.([]byte)
+						p.chsend <- &stSendPackage{
+							addr: p.addr,
+							data: data,
+						}
 					}
 				}
 				time.Sleep(10 * time.Millisecond)
@@ -52,14 +55,18 @@ func (p *stUdp) start() {
 	}()
 }
 
-func (p *stUdp) close() {
+func (p *stUdp) Close() {
 	close(p.chexit)
 	p.wg.Wait()
 }
 
-func (p *stUdp) write(msgType int, msg []byte) {
+func (p *stUdp) Write(msgType int, msg []byte) {
 	data := p.pack(msgType, msg)
 	p.u.Send(data, len(data))
+}
+
+func (p *stUdp) Disconnected() bool {
+	return p.disconnected
 }
 
 func (p *stUdp) recv(data []byte) {
@@ -82,9 +89,7 @@ func (p *stUdp) pack(msgType int, msg []byte) []byte {
 
 func (p *stUdp) unpack(data []byte) {
 	msgType := message.ToInt(data[:2])
-	data = data[2:]
 	msg := &message.Message{
-		ConnId:  p.id,
 		MsgType: msgType,
 		Data:    data[2:],
 	}
